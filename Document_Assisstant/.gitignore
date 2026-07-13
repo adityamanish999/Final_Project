@@ -1,0 +1,41 @@
+# Environment variables (contains API keys - never commit!)
+.env
+.env.*
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Data files (potentially large)
+data/raw/
+data/processed/
+*.csv
+*.parquet
+*.pkl
+
+# Logs
+*.log
+logs/
