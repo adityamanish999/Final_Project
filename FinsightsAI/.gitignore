@@ -20,13 +20,6 @@ ENV/
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# Data (large files)
-data/raw/*.csv
-data/processed/*.csv
-data/models/*.pkl
-data/models/*.json
-data/models/*.txt
-
 # Environment variables
 .env
 .env.*

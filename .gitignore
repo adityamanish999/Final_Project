@@ -32,15 +32,6 @@ build/
 *.egg
 .eggs/
 
-# Data files (large / generated)
-*.csv
-*.parquet
-*.pkl
-*.json
-data/raw/
-data/processed/
-data/models/
-
 # Logs
 *.log
 logs/
@@ -58,8 +49,3 @@ desktop.ini
 
 # Kaggle credentials
 kaggle.json
-
-# Model outputs / SHAP
-*.png
-*.html
-shap_values/

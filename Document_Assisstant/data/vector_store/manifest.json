@@ -1,0 +1,21 @@
+{
+  "embedding_model": "all-MiniLM-L6-v2",
+  "dimension": 384,
+  "ingested_files": {
+    "a99f263003295b177e8c50ec34f2307093857a357276527e98d5a6205e21a908": {
+      "filename": "berkshire_2022_shareholder_letter.pdf",
+      "num_chunks": 46,
+      "ingested_at": "2026-07-11T07:17:22.912247+00:00"
+    },
+    "2132b85f9c472a6f0b141551adb08d93f88db28e6a3794e7e2b13ca3f8a57b5b": {
+      "filename": "berkshire_2023_annual_report.pdf",
+      "num_chunks": 945,
+      "ingested_at": "2026-07-11T07:17:31.797855+00:00"
+    },
+    "829169be21f4ce05202720fe5645cc1b9a5b1ae20bf5e6ebaff987349766eafd": {
+      "filename": "berkshire_2023_shareholder_letter.pdf",
+      "num_chunks": 77,
+      "ingested_at": "2026-07-11T07:17:32.261210+00:00"
+    }
+  }
+}
