@@ -16,7 +16,7 @@ VECTOR_STORE_DIR = DATA_DIR / "vector_store"
 # Models
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 RERANKER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
+GROQ_MODEL_NAME = "openai/gpt-oss-120b"  # was llama-3.3-70b-versatile, no longer served by Groq
 
 # Chunking defaults
 DEFAULT_CHUNK_SIZE = 800

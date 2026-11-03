@@ -1,11 +1,25 @@
-"""Phase 1: PDF text extraction and cleaning."""
+"""Phases 1-2: PDF text extraction, cleaning, and chunking.
+
+Phase 1 (ingestion): pypdf extracts per-page text, repeated headers/footers and page-number-only
+lines are removed, whitespace is normalized, and a sha256 file hash is computed for dedup.
+
+Phase 2 (chunking): fixed-size character windows with overlap, applied per page so chunks never
+cross page boundaries and every chunk keeps an exact page number for citations.
+"""
 
 import hashlib
 import re
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 
 from pypdf import PdfReader
+
+from core import config
+
+# ---------------------------------------------------------------------------
+# Phase 1: ingestion
+# ---------------------------------------------------------------------------
 
 _PAGE_NUMBER_LINE = re.compile(r"^\d{1,4}$")
 _WHITESPACE = re.compile(r"\s+")
@@ -72,3 +86,48 @@ def load_document(pdf_path: str | Path) -> tuple[list[dict], str]:
         for p in deboilerplated
     ]
     return pages, file_hash(pdf_path)
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: chunking
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ChunkConfig:
+    chunk_size: int = config.DEFAULT_CHUNK_SIZE
+    overlap: int = config.DEFAULT_CHUNK_OVERLAP
+    strategy: str = "fixed"
+
+
+def chunk_text(text: str, page: int, source: str, chunk_config: ChunkConfig) -> list[dict]:
+    """Fixed-size character windowing with overlap. Chunks never cross page boundaries."""
+    if chunk_config.strategy != "fixed":
+        raise ValueError(f"Unsupported chunking strategy: {chunk_config.strategy}")
+
+    chunks = []
+    start = 0
+    step = chunk_config.chunk_size - chunk_config.overlap
+    while start < len(text):
+        piece = text[start:start + chunk_config.chunk_size]
+        if piece:
+            chunks.append({
+                "text": piece,
+                "page": page,
+                "source": source,
+                "chunk_size": chunk_config.chunk_size,
+                "overlap": chunk_config.overlap,
+            })
+        start += step
+    return chunks
+
+
+def chunk_document(pages: list[dict], chunk_config: ChunkConfig | None = None) -> list[dict]:
+    """Applies chunk_text per page and concatenates. `pages` is [{"page","text","source"}]."""
+    chunk_config = chunk_config or ChunkConfig()
+    chunks = []
+    for page in pages:
+        chunks.extend(
+            chunk_text(page["text"], page["page"], page["source"], chunk_config)
+        )
+    return chunks

@@ -1,8 +1,8 @@
 """Compares retrieval quality across multiple chunk_size/overlap configurations.
 
 Builds an isolated, in-memory FAISS index per ChunkConfig over the given PDFs (the persistent
-app vector store in data/vector_store/ is left untouched), runs the fixed query set from
-evaluation.queries, and returns a tidy DataFrame — one row per (config, query) — plus a
+app vector store in data/vector_store/ is left untouched), runs the fixed query set
+EVAL_QUERIES below, and returns a tidy DataFrame — one row per (config, query) — plus a
 config-level summary. This is real, reusable module code: notebooks/demo.ipynb only calls into
 it and displays the results, it does not reimplement any of this logic.
 """
@@ -13,11 +13,57 @@ from statistics import mean
 import faiss
 import pandas as pd
 
-from core.chunking import ChunkConfig, chunk_document
-from core.embeddings import Embedder
-from core.ingestion import load_document
-from core.reranker import Reranker
-from evaluation.queries import EVAL_QUERIES
+from core.documents import ChunkConfig, chunk_document, load_document
+from core.retrieval import Reranker
+from core.vector_store import Embedder
+
+# Fixed evaluation query set, tailored to the sample Berkshire Hathaway annual report /
+# shareholder letter documents downloaded by `python scripts/cli.py download`.
+# `expected_keywords` is an OPTIONAL list of any-of terms used only as a cheap relevance proxy
+# (substring hit-rate) in the absence of a labeled ground-truth QA dataset — not an exhaustive
+# or authoritative answer key.
+EVAL_QUERIES = [
+    {
+        "query": "What does Warren Buffett say about Berkshire Hathaway's float from insurance operations?",
+        "expected_keywords": ["float", "insurance"],
+    },
+    {
+        "query": "How does Berkshire Hathaway think about capital allocation and acquisitions?",
+        "expected_keywords": ["capital", "acquisition"],
+    },
+    {
+        "query": "What does the letter say about Charlie Munger?",
+        "expected_keywords": ["Munger"],
+    },
+    {
+        "query": "What is Berkshire Hathaway's view on stock buybacks / share repurchases?",
+        "expected_keywords": ["repurchase", "buyback", "shares"],
+    },
+    {
+        "query": "How is Berkshire's investment in Apple discussed?",
+        "expected_keywords": ["Apple"],
+    },
+    {
+        "query": "What does the report say about BNSF railroad?",
+        "expected_keywords": ["BNSF", "railroad"],
+    },
+    {
+        "query": "What does the report say about Berkshire Hathaway Energy?",
+        "expected_keywords": ["Energy"],
+    },
+    {
+        "query": "What is Berkshire Hathaway's book value per share?",
+        "expected_keywords": ["book value", "per share"],
+    },
+    {
+        "query": "What risks or uncertainties does the report describe for the insurance business?",
+        "expected_keywords": ["risk", "insurance"],
+    },
+    {
+        "query": "What does the letter say about long-term shareholders and Berkshire's investment philosophy?",
+        "expected_keywords": ["long-term", "shareholders"],
+    },
+]
 
 DEFAULT_CONFIGS = [
     ChunkConfig(chunk_size=400, overlap=50),
@@ -142,7 +188,7 @@ if __name__ == "__main__":
     if not pdfs:
         raise SystemExit(
             f"No sample PDFs found in {app_config.SAMPLE_PDFS_DIR}. "
-            "Run scripts/download_sample_data.py first."
+            "Run `python scripts/cli.py download` first."
         )
 
     results = run_comparison(pdfs)

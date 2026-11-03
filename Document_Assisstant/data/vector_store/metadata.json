@@ -8542,5 +8542,77 @@
     "source": "berkshire_2023_shareholder_letter.pdf",
     "chunk_size": 800,
     "overlap": 150
+  },
+  {
+    "id": 1068,
+    "text": "Saaketh Koduri +91 89858 29333 | saaketh180903@gmail.com | LinkedIn | GitHub | Hyderabad, India PROFESSIONAL EXPERIENCE Grid Dynamics \u2014 Hyderabad (Onsite) Jan 2025 \u2013 Present Data Scientist Apr 2026 \u2013 Present \u2022 Own production generative-AI systems end to end for internal platforms and Fortune 500 client engagements, set the standards research prototypes must clear before shipping, and mentored an intern team building a knowledge-base-driven CRM intelligence layer over Salesforce. Junior Data Scientist Aug 2025 \u2013 Mar 2026 \u2022 Served as technical lead on GAIA, owning roadmap and architecture, and drove enterprise rollout through Azure deployment and internal VAPT clearance. Data Science Intern Jan 2025 \u2013 Jul 2025 \u2022 Delivered three research workstreams: document AI, synthetic data privacy evalua",
+    "page": 1,
+    "source": "Saaketh_AI_Engineer_Resume (4).pdf",
+    "chunk_size": 800,
+    "overlap": 150
+  },
+  {
+    "id": 1069,
+    "text": "nd internal VAPT clearance. Data Science Intern Jan 2025 \u2013 Jul 2025 \u2022 Delivered three research workstreams: document AI, synthetic data privacy evaluation, multi-agent code generation. National Payments Corporation of India (NPCI) \u2014 Onsite | Data Science Intern May 2024 \u2013 Jul 2024 \u2022 Modeled fraud detection over India\u2019s UPI network data (460M daily transactions, 150 features per record) with Multi-Armed Bandit and positive-unlabeled learning, improving precision-recall over baseline. PROJECTS Compliance Intelligence Center (CIC) Feb 2026 \u2013 Present Client: Fortune 500 financial services | Role: lead engineer | Status: in production Multi-tenant AML and customer-due-diligence screening platform used by compliance analysts. \u2022 Built an in-house Agentic RAG engine that judges crawled content aga",
+    "page": 1,
+    "source": "Saaketh_AI_Engineer_Resume (4).pdf",
+    "chunk_size": 800,
+    "overlap": 150
+  },
+  {
+    "id": 1070,
+    "text": " AML and customer-due-diligence screening platform used by compliance analysts. \u2022 Built an in-house Agentic RAG engine that judges crawled content against each tenant\u2019s rule corpus via hybrid vector and keyword retrieval with LLM tool-calling, returning each finding with the rule breached, its evidence and a confidence score. \u2022 Drove a fully config-driven design: one shared engine serves every tenant, with rule corpora, cadences and risk thresholds supplied as configuration rather than forked in code. \u2022 Built the acquisition layer on Playwright with robots.txt and rate-limit compliance for ethical crawling, widened by LLM web search via Sonar Pro and newsletter and adverse-media feeds, triaged against each client and its related parties \u2014 subsidiaries, individuals, board members. \u2022 Enginee",
+    "page": 1,
+    "source": "Saaketh_AI_Engineer_Resume (4).pdf",
+    "chunk_size": 800,
+    "overlap": 150
+  },
+  {
+    "id": 1071,
+    "text": " Pro and newsletter and adverse-media feeds, triaged against each client and its related parties \u2014 subsidiaries, individuals, board members. \u2022 Engineered the Kafka event backbone across four priority tiers on isolated consumer groups, so urgent scans never queue behind bulk work; findings persist in PostgreSQL and Apache AGE. \u2022 Owned architecture and code review through the first 50-client pilot, ahead of a population of tens of thousands, cutting an estimated 2\u20133 hours of analyst review per day. GAIA \u2014 Grid Dynamics Autonomous Interviewing Agent Dec 2025 \u2013 Present Role: technical lead | Status: in production Autonomous technical interviewing platform for mid-to-senior engineering roles. \u2022 Scaled the platform to 1,000+ autonomous technical assessments across four seniority grades, saving 1",
+    "page": 1,
+    "source": "Saaketh_AI_Engineer_Resume (4).pdf",
+    "chunk_size": 800,
+    "overlap": 150
+  },
+  {
+    "id": 1072,
+    "text": " platform for mid-to-senior engineering roles. \u2022 Scaled the platform to 1,000+ autonomous technical assessments across four seniority grades, saving 1,500+ interviewer- hours and clearing every cybersecurity check (VAPT) before production. \u2022 Shipped the resume screening pipeline: an LLM parses each CV, redacts PII, extracts structured fields and scores candidates on five weighted dimensions, behind a provider-agnostic LLM interface with GDPR-compliant handling and human-in-the-loop review. \u2022 Traced a scoring bias across 585 graded production answers \u2014 equally correct short answers scored lower than long ones \u2014 and rebalanced the rubric toward conceptual understanding. \u2022 Built the system-design assessment on a shared canvas where candidates diagram architecture beside a guardrailed AI inter",
+    "page": 1,
+    "source": "Saaketh_AI_Engineer_Resume (4).pdf",
+    "chunk_size": 800,
+    "overlap": 150
+  },
+  {
+    "id": 1073,
+    "text": " conceptual understanding. \u2022 Built the system-design assessment on a shared canvas where candidates diagram architecture beside a guardrailed AI interviewer that probes their reasoning without leaking the answer. \u2022 Built the reverse-engineering assessment on the Pi agent harness, sandboxed to read-only tools inside a container, letting candidates explore a real repository safely . \u2022 Cached live session state in Redis over PostgreSQL as system of record, holding sub-second writes across 90\u2013180 minute exams. Long-Form Code Generation Platform Mar \u2013 Jun 2025 Capstone | selected to continue past the internship | Status: internal prototype \u2022 Generated full-stack web applications from natural-language prompts through a LangGraph multi-agent pipeline (Planner, Generator, Reviewer, Refiner, Tester",
+    "page": 1,
+    "source": "Saaketh_AI_Engineer_Resume (4).pdf",
+    "chunk_size": 800,
+    "overlap": 150
+  },
+  {
+    "id": 1074,
+    "text": "ated full-stack web applications from natural-language prompts through a LangGraph multi-agent pipeline (Planner, Generator, Reviewer, Refiner, Tester, Indexer), withcoderag over a ChromaDB index so follow-up prompts produced targeted fixes; apps ran in Daytona and Docker sandboxes. TECHNICAL SKILLS Programming Languages & Frameworks: Python, C+ +, JavaScript, TypeScript, SQL, React Generative & Agentic AI: LLM application development, agentic systems, multi-agent orchestration (LangGraph, LangChain), harness engineering, agent sandboxing, tool calling, guardrails, prompt engineering, fine-tuning, LLM evaluation RAG & Retrieval: RAG (Retrieval-Augmented Generation), Agentic RAG, hybrid vector and keyword retrieval, ChromaDB, knowledge bases Machine Learning & Deep Learning:PyTorch, Keras, ",
+    "page": 1,
+    "source": "Saaketh_AI_Engineer_Resume (4).pdf",
+    "chunk_size": 800,
+    "overlap": 150
+  },
+  {
+    "id": 1075,
+    "text": "l-Augmented Generation), Agentic RAG, hybrid vector and keyword retrieval, ChromaDB, knowledge bases Machine Learning & Deep Learning:PyTorch, Keras, Transformers, scikit-learn, GANs, VAEs, CTGAN, OCR, feature engineering, hyperparameter tuning, model evaluation Backend & Distributed Systems: FastAPI, REST APIs, Apache Kafka, event-driven architecture, microservices, Temporal durable workflows, Server-Sent Events, Redis, JWT/RBAC Databases, Cloud & Tools: PostgreSQL, Apache AGE, MongoDB, Redis, ChromaDB; Azure, GCP, AWS, Docker, Git, GitHub, Playwright EDUCATION B.Tech, Computer Science & Engineering \u2014 Birla Institute of Technology, Mesra| CGPA: 8.56/10 2021 \u2013 2025 ACHIEVEMENTS Certifications: Google Cloud Certified \u2014 Cloud Digital Leader \u00b7 Microsoft Certified: Azure Fundamentals (AZ-900) ",
+    "page": 1,
+    "source": "Saaketh_AI_Engineer_Resume (4).pdf",
+    "chunk_size": 800,
+    "overlap": 150
+  },
+  {
+    "id": 1076,
+    "text": "PA: 8.56/10 2021 \u2013 2025 ACHIEVEMENTS Certifications: Google Cloud Certified \u2014 Cloud Digital Leader \u00b7 Microsoft Certified: Azure Fundamentals (AZ-900) Awards: Breakthrough Concept Award, Google Agentic AI Day 2025\u00b7 Winner, AI 4 Andhra Police Hackathon 2025\u00b7 Codeforces Specialist, 600+ DSA problems",
+    "page": 1,
+    "source": "Saaketh_AI_Engineer_Resume (4).pdf",
+    "chunk_size": 800,
+    "overlap": 150
   }
 ]

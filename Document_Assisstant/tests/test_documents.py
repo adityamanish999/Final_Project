@@ -1,4 +1,4 @@
-from core.chunking import ChunkConfig, chunk_document, chunk_text
+from core.documents import ChunkConfig, chunk_document, chunk_text
 
 
 def test_chunk_text_respects_size_and_overlap():

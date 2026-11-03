@@ -1,17 +1,15 @@
 """High-level facade tying ingestion, chunking, and the agent together.
 
-This is what app.py, scripts/ingest_cli.py, and notebooks/demo.ipynb call — none of them
-touch core.ingestion/chunking/vector_store directly.
+This is what app.py, scripts/cli.py, and notebooks/demo.ipynb call — none of them
+touch core.documents/vector_store/retrieval/llm_agent directly.
 """
 
 from pathlib import Path
 
-from core.chunking import ChunkConfig, chunk_document
-from core.embeddings import Embedder
-from core.ingestion import load_document
+from core.documents import ChunkConfig, chunk_document, load_document
 from core.llm_agent import Agent
-from core.reranker import Reranker
-from core.vector_store import VectorStore
+from core.retrieval import Reranker
+from core.vector_store import Embedder, VectorStore
 
 
 class DocumentAssistant:

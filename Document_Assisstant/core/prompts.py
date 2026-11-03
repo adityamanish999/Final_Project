@@ -20,3 +20,22 @@ report.pdf, page 4).
 CONTEXT_BLOCK_TEMPLATE = "[source: {source}, page {page}] {text}"
 
 NO_RESULTS_MESSAGE = "No relevant content was found in the uploaded documents for this query."
+
+# Used only when the tool-calling loop hits MAX_TOOL_ITERATIONS: the model gets the context it
+# already retrieved and must answer without calling any more tools.
+FALLBACK_SYSTEM_PROMPT = """You are a Document Assistant. Answer the user's question using ONLY \
+the document excerpts provided in the user's message. Do not use outside knowledge and do not \
+call any tools.
+
+Rules:
+- If the excerpts do not contain enough information to answer, say exactly: \
+"I don't have enough information in these documents to answer that." Do not guess.
+- Cite the source filename and page number for what you use, e.g. (source: report.pdf, page 4).
+- Keep answers concise and directly responsive to the question.
+"""
+
+FALLBACK_USER_TEMPLATE = """Document excerpts retrieved so far:
+
+{context}
+
+Question: {question}"""

@@ -16,6 +16,11 @@
       "filename": "berkshire_2023_shareholder_letter.pdf",
       "num_chunks": 77,
       "ingested_at": "2026-07-11T07:17:32.261210+00:00"
+    },
+    "8e1c8e20a76ba22881ee64711f0c48a21c7f4a9e74c035b0da4c7fa421223d19": {
+      "filename": "Saaketh_AI_Engineer_Resume (4).pdf",
+      "num_chunks": 9,
+      "ingested_at": "2026-11-03T16:55:44.952136+00:00"
     }
   }
 }

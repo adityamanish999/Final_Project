@@ -89,3 +89,12 @@ def test_agent_stops_at_max_iterations_and_falls_back(tmp_path):
 
     assert result["answer"] == "Fallback answer after hitting the iteration cap."
     assert len(client.calls) == 5  # 4 tool-calling rounds (config.MAX_TOOL_ITERATIONS) + 1 fallback
+
+    # The fallback call must offer no tools and contain no tool-call scaffolding (models such as
+    # gpt-oss try to call a tool again if they see it), but must still carry the retrieved context.
+    fallback_call = client.calls[-1]
+    assert "tools" not in fallback_call
+    assert all(m["role"] in ("system", "user", "assistant") for m in fallback_call["messages"])
+    assert not any("tool_calls" in m for m in fallback_call["messages"])
+    assert "chunk" in fallback_call["messages"][-1]["content"]
+    assert "Keep looping" in fallback_call["messages"][-1]["content"]
