@@ -1,10 +1,10 @@
 import json
 from types import SimpleNamespace
 
-from core.llm_agent import Agent
-from core.vector_store import VectorStore
-from tests.test_retrieval import FakeReranker
-from tests.test_vector_store import FakeEmbedder, make_chunks
+import pytest
+
+from core import llm_agent, vector_store
+from tests.conftest import make_chunks
 
 
 def _tool_call(call_id, name, arguments):
@@ -21,7 +21,7 @@ def _completion(content=None, tool_calls=None):
 
 
 class FakeGroqClient:
-    """Simulates a two-turn tool-calling exchange: first a retrieve_context call, then an answer."""
+    """Returns the given responses in order and records every request it receives."""
 
     def __init__(self, responses):
         self.responses = list(responses)
@@ -33,16 +33,21 @@ class FakeGroqClient:
         return self.responses.pop(0)
 
 
-def build_store(tmp_path) -> VectorStore:
-    embedder = FakeEmbedder()
-    store = VectorStore(store_dir=tmp_path, embedder=embedder)
-    store.add_document(make_chunks("doc1.pdf", n=3), file_hash="hash1", filename="doc1.pdf")
-    return store
+@pytest.fixture
+def use_fake_client(fake_store, monkeypatch):
+    """Puts one document in the fake store; returns a function that installs a FakeGroqClient."""
+    vector_store.add_document(make_chunks("doc1.pdf", n=3), file_hash="hash1", filename="doc1.pdf")
+
+    def install(responses):
+        client = FakeGroqClient(responses)
+        monkeypatch.setattr(llm_agent, "get_client", lambda: client)
+        return client
+
+    return install
 
 
-def test_agent_dispatches_tool_call_and_returns_final_answer(tmp_path):
-    store = build_store(tmp_path)
-    client = FakeGroqClient([
+def test_agent_dispatches_tool_call_and_returns_final_answer(use_fake_client):
+    client = use_fake_client([
         _completion(
             content=None,
             tool_calls=[_tool_call("call_1", "retrieve_context", {"query": "chunk 0", "top_k": 2})],
@@ -50,8 +55,7 @@ def test_agent_dispatches_tool_call_and_returns_final_answer(tmp_path):
         _completion(content="Here is the answer, grounded in the retrieved chunks."),
     ])
 
-    agent = Agent(store=store, reranker=FakeReranker(), embedder=store.embedder, client=client)
-    result = agent.ask("What is chunk 0 about?", history=[])
+    result = llm_agent.ask("What is chunk 0 about?", history=[])
 
     assert result["answer"] == "Here is the answer, grounded in the retrieved chunks."
     assert len(result["sources"]) == 2
@@ -65,27 +69,23 @@ def test_agent_dispatches_tool_call_and_returns_final_answer(tmp_path):
     assert tool_messages[0]["tool_call_id"] == "call_1"
 
 
-def test_agent_answers_directly_without_tool_calls(tmp_path):
-    store = build_store(tmp_path)
-    client = FakeGroqClient([_completion(content="No tools needed for this one.")])
+def test_agent_answers_directly_without_tool_calls(use_fake_client):
+    client = use_fake_client([_completion(content="No tools needed for this one.")])
 
-    agent = Agent(store=store, reranker=FakeReranker(), embedder=store.embedder, client=client)
-    result = agent.ask("Hello", history=[])
+    result = llm_agent.ask("Hello", history=[])
 
     assert result["answer"] == "No tools needed for this one."
     assert result["sources"] == []
     assert len(client.calls) == 1
 
 
-def test_agent_stops_at_max_iterations_and_falls_back(tmp_path):
-    store = build_store(tmp_path)
+def test_agent_stops_at_max_iterations_and_falls_back(use_fake_client):
     looping_tool_call = [_tool_call("call_x", "retrieve_context", {"query": "chunk"})]
     responses = [_completion(content=None, tool_calls=looping_tool_call) for _ in range(4)]
     responses.append(_completion(content="Fallback answer after hitting the iteration cap."))
-    client = FakeGroqClient(responses)
+    client = use_fake_client(responses)
 
-    agent = Agent(store=store, reranker=FakeReranker(), embedder=store.embedder, client=client)
-    result = agent.ask("Keep looping", history=[])
+    result = llm_agent.ask("Keep looping", history=[])
 
     assert result["answer"] == "Fallback answer after hitting the iteration cap."
     assert len(client.calls) == 5  # 4 tool-calling rounds (config.MAX_TOOL_ITERATIONS) + 1 fallback

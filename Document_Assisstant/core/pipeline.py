@@ -1,60 +1,37 @@
-"""High-level facade tying ingestion, chunking, and the agent together.
+"""Ingestion: the full path from a PDF file to searchable chunks in the vector store.
 
-This is what app.py, scripts/cli.py, and notebooks/demo.ipynb call — none of them
-touch core.documents/vector_store/retrieval/llm_agent directly.
+    read + clean (documents) -> chunk (documents) -> embed + store (vector_store) -> save to disk
 """
 
 from pathlib import Path
 
-from core.documents import ChunkConfig, chunk_document, load_document
-from core.llm_agent import Agent
-from core.retrieval import Reranker
-from core.vector_store import Embedder, VectorStore
+from core import config, vector_store
+from core.documents import chunk_document, load_document
 
 
-class DocumentAssistant:
-    def __init__(self, store: VectorStore | None = None, reranker: Reranker | None = None):
-        self.embedder = Embedder()
-        self.store = store or VectorStore(embedder=self.embedder)
-        self.reranker = reranker or Reranker()
-        self._agent: Agent | None = None
+def ingest_pdf(
+    pdf_path,
+    display_name: str | None = None,
+    chunk_size: int = config.DEFAULT_CHUNK_SIZE,
+    overlap: int = config.DEFAULT_CHUNK_OVERLAP,
+) -> dict:
+    """Adds one PDF to the vector store. Skips it if the same file was ingested before.
 
-    @property
-    def agent(self) -> Agent:
-        """Lazy — constructing it requires a Groq API key, which ingestion-only flows don't need."""
-        if self._agent is None:
-            self._agent = Agent(store=self.store, reranker=self.reranker, embedder=self.embedder)
-        return self._agent
+    `display_name` is the filename to show in citations. Use it when `pdf_path` is a temporary
+    file (e.g. a Streamlit upload) so answers cite the original name.
 
-    def ingest_pdf(
-        self,
-        pdf_path: str | Path,
-        chunk_config: ChunkConfig | None = None,
-        display_name: str | None = None,
-    ) -> dict:
-        """Extracts, cleans, chunks, embeds, and persists a PDF. Idempotent per file content.
+    Returns {"filename": str, "added_chunks": int, "skipped": bool}.
+    """
+    pages, file_hash = load_document(pdf_path)
+    filename = display_name or Path(pdf_path).name
 
-        `display_name` overrides the stored filename — useful when `pdf_path` is a temp file
-        (e.g. a Streamlit upload) and the original filename should be shown/cited instead.
-        """
-        pages, file_hash = load_document(pdf_path)
-        filename = display_name or Path(pdf_path).name
+    if vector_store.is_ingested(file_hash):
+        return {"filename": filename, "added_chunks": 0, "skipped": True}
 
-        if self.store.is_ingested(file_hash):
-            return {"filename": filename, "added_chunks": 0, "skipped": True}
+    chunks = chunk_document(pages, chunk_size, overlap)
+    for chunk in chunks:
+        chunk["source"] = filename
 
-        chunks = chunk_document(pages, chunk_config)
-        for chunk in chunks:
-            chunk["source"] = filename
-        added = self.store.add_document(chunks, file_hash, filename)
-        self.store.save()
-        return {"filename": filename, "added_chunks": added, "skipped": False}
-
-    def ask(self, query: str, history: list[dict] | None = None) -> dict:
-        return self.agent.ask(query, history)
-
-    def list_documents(self) -> list[dict]:
-        return self.store.list_documents()
-
-    def clear(self) -> None:
-        self.store.clear()
+    added = vector_store.add_document(chunks, file_hash, filename)
+    vector_store.save_store()
+    return {"filename": filename, "added_chunks": added, "skipped": False}

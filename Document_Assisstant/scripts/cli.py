@@ -48,11 +48,10 @@ def download_sample_pdfs(dest_dir: Path = config.SAMPLE_PDFS_DIR) -> list[Path]:
 
 def ingest_pdfs(pdf_paths: list[str]) -> None:
     """Ingests each PDF into the persistent vector store (idempotent per file content)."""
-    from core.pipeline import DocumentAssistant  # loads the models, so only import when needed
+    from core.pipeline import ingest_pdf  # imports the ML libraries, so only import when needed
 
-    assistant = DocumentAssistant()
     for pdf_path in pdf_paths:
-        result = assistant.ingest_pdf(pdf_path)
+        result = ingest_pdf(pdf_path)
         if result["skipped"]:
             print(f"skipped (already ingested): {result['filename']}")
         else:

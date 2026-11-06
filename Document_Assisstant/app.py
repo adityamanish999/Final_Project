@@ -6,16 +6,18 @@ from pathlib import Path
 
 import streamlit as st
 
-from core import config
-from core.pipeline import DocumentAssistant
-from core.vector_store import EmbeddingModelMismatchError
+from core import config, llm_agent, retrieval, vector_store
+from core.pipeline import ingest_pdf
 
 st.set_page_config(page_title="Document Assistant", page_icon="📄", layout="wide")
 
 
 @st.cache_resource(show_spinner="Loading models (embeddings + re-ranker)...")
-def get_assistant() -> DocumentAssistant:
-    return DocumentAssistant()
+def load_models() -> None:
+    """Runs once per server: loads the vector store from disk and both ML models."""
+    vector_store.load_store()
+    vector_store.get_embedding_model()
+    retrieval.get_reranker_model()
 
 
 def render_sources(sources: list[dict]) -> None:
@@ -41,8 +43,8 @@ def main() -> None:
         st.stop()
 
     try:
-        assistant = get_assistant()
-    except EmbeddingModelMismatchError as exc:
+        load_models()
+    except ValueError as exc:  # vector store was built with a different embedding model
         st.error(str(exc))
         st.stop()
 
@@ -67,7 +69,7 @@ def main() -> None:
                     tmp_path = Path(tmp.name)
 
                 with st.spinner(f"Ingesting {uploaded_file.name}..."):
-                    result = assistant.ingest_pdf(tmp_path, display_name=uploaded_file.name)
+                    result = ingest_pdf(tmp_path, display_name=uploaded_file.name)
 
                 if result["skipped"]:
                     st.info(f"Already indexed, skipped: {result['filename']}")
@@ -75,7 +77,7 @@ def main() -> None:
                     st.success(f"Indexed {result['filename']}: {result['added_chunks']} chunks")
 
         st.divider()
-        docs = assistant.list_documents()
+        docs = vector_store.list_documents()
         st.subheader(f"Documents in store ({len(docs)})")
         if docs:
             for doc in docs:
@@ -86,7 +88,7 @@ def main() -> None:
         st.divider()
         if st.checkbox("Confirm clear knowledge base"):
             if st.button("Clear knowledge base", type="secondary"):
-                assistant.clear()
+                vector_store.clear_store()
                 st.session_state.chat_history = []
                 st.session_state.display_history = []
                 st.rerun()
@@ -103,7 +105,7 @@ def main() -> None:
 
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                result = assistant.ask(query, st.session_state.chat_history)
+                result = llm_agent.ask(query, st.session_state.chat_history)
             st.write(result["answer"])
             render_sources(result["sources"])
 

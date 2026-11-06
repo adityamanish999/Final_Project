@@ -20,7 +20,7 @@ Document_Assisstant/
 │   ├── retrieval.py          #   phase 4: FAISS search + cross-encoder re-ranking
 │   ├── prompts.py            #   prompt templates
 │   ├── llm_agent.py          #   phase 5: Groq tools + tool-calling agent loop
-│   └── pipeline.py           #   DocumentAssistant facade used by app/CLI/notebook
+│   └── pipeline.py           #   ingest_pdf(): PDF -> chunks -> vector store
 ├── scripts/cli.py            # `download` sample PDFs, `ingest` PDFs from the terminal
 ├── evaluation/               # chunk-size comparison experiment (evaluate_chunking.py)
 ├── notebooks/demo.ipynb      # thin demo/reporting notebook (imports core/evaluation, no logic)
@@ -86,11 +86,11 @@ network access or an API key.
 
 1. **Ingestion** (`core/documents.py`): `pypdf` extracts per-page text; whitespace and repeated
    headers/footers are cleaned up.
-2. **Chunking** (`core/documents.py`): fixed-size character windows with overlap, configurable via
-   `ChunkConfig`, never crossing page boundaries.
-3. **Embeddings** (`core/vector_store.py`, `Embedder`): `sentence-transformers/all-MiniLM-L6-v2`,
+2. **Chunking** (`core/documents.py`): fixed-size character windows with overlap
+   (`chunk_size`/`overlap` arguments), never crossing page boundaries.
+3. **Embeddings** (`core/vector_store.py`, `embed()`): `sentence-transformers/all-MiniLM-L6-v2`,
    local, no API calls.
-4. **Persistent vector store** (`core/vector_store.py`, `VectorStore`): FAISS `IndexFlatIP` + JSON
+4. **Persistent vector store** (`core/vector_store.py`, `load_store()`/`save_store()`): FAISS `IndexFlatIP` + JSON
    metadata/manifest sidecar files under `data/vector_store/`, with dedup by file hash and
    incremental add for new documents.
 5. **Retrieval + ranking** (`core/retrieval.py`): FAISS over-fetches candidates, a cross-encoder

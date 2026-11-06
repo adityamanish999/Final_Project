@@ -1,16 +1,21 @@
-"""Phase 5: Groq-powered answer generation with native tool-calling.
+"""Step 5: answer a question with the Groq LLM, letting it call tools to search the documents.
 
-Vanilla Python state/tool-call management (no LangChain/LangGraph/CrewAI): we send the
-conversation plus tool schemas (`TOOLS`) to Groq, parse any `tool_calls` on the response,
-dispatch them to real Python functions (`TOOL_DISPATCH`), feed the results back as
-`role: "tool"` messages, and loop until the model returns a plain-text answer.
+How one question is answered (`ask`):
+1. Send the conversation to Groq along with a description of our tools (`TOOLS`).
+2. If the model replies with plain text, that's the answer. Done.
+3. If the model asks to call a tool, we run the matching Python function (`run_tool`), send
+   the result back, and go to step 1 again.
+4. If the model is still calling tools after MAX_TOOL_ITERATIONS rounds, we stop and ask it
+   to answer from whatever it has retrieved so far, with no tools allowed.
+
+No LangChain or similar: it's just a loop over a list of message dicts.
 """
 
 import json
 
 from groq import Groq
 
-from core import config
+from core import config, retrieval, vector_store
 from core.prompts import (
     CONTEXT_BLOCK_TEMPLATE,
     FALLBACK_SYSTEM_PROMPT,
@@ -18,13 +23,12 @@ from core.prompts import (
     NO_RESULTS_MESSAGE,
     SYSTEM_PROMPT,
 )
-from core.retrieval import Reranker, retrieve_and_rank
-from core.vector_store import Embedder, VectorStore
 
 # ---------------------------------------------------------------------------
-# Tools: JSON schemas sent to Groq + dispatch table to real Python functions
+# Tools
 # ---------------------------------------------------------------------------
 
+# This is what Groq sees: the name, purpose and arguments of each tool, as JSON schema.
 TOOLS = [
     {
         "type": "function",
@@ -62,141 +66,154 @@ TOOLS = [
 ]
 
 
-def _run_retrieve_context(args: dict, agent: "Agent") -> tuple[str, list[dict]]:
-    query = args["query"]
-    top_k = int(args.get("top_k") or config.DEFAULT_TOP_K)
-    chunks = retrieve_and_rank(
-        query, agent.store, agent.reranker, embedder=agent.embedder, top_k=top_k
-    )
+# The real Python code behind each tool. Each returns (text for the LLM, source chunks for the UI).
+
+def tool_retrieve_context(query: str, top_k: int = config.DEFAULT_TOP_K) -> tuple[str, list[dict]]:
+    chunks = retrieval.retrieve(query, top_k=top_k)
     if not chunks:
         return NO_RESULTS_MESSAGE, []
 
-    content = "\n\n".join(
+    text = "\n\n".join(
         CONTEXT_BLOCK_TEMPLATE.format(source=c["source"], page=c["page"], text=c["text"])
         for c in chunks
     )
-    return content, chunks
+    return text, chunks
 
 
-def _run_list_documents(args: dict, agent: "Agent") -> tuple[str, list[dict]]:
-    docs = agent.store.list_documents()
+def tool_list_documents() -> tuple[str, list[dict]]:
+    docs = vector_store.list_documents()
     if not docs:
         return "No documents have been ingested yet.", []
-    return json.dumps(
-        [{"filename": d["filename"], "num_chunks": d["num_chunks"]} for d in docs]
-    ), []
+    return json.dumps([{"filename": d["filename"], "num_chunks": d["num_chunks"]} for d in docs]), []
 
 
-TOOL_DISPATCH = {
-    "retrieve_context": _run_retrieve_context,
-    "list_documents": _run_list_documents,
-}
+def run_tool(name: str, args: dict) -> tuple[str, list[dict]]:
+    """Runs the tool the model asked for."""
+    if name == "retrieve_context":
+        return tool_retrieve_context(args["query"], int(args.get("top_k") or config.DEFAULT_TOP_K))
+    if name == "list_documents":
+        return tool_list_documents()
+    return f"Unknown tool: {name}", []
 
 
 # ---------------------------------------------------------------------------
-# Agent: the tool-calling loop
+# Groq client
+# ---------------------------------------------------------------------------
+
+_client = None  # created on first use, so ingesting PDFs doesn't need an API key
+
+
+def get_client() -> Groq:
+    global _client
+    if _client is None:
+        _client = Groq()  # reads GROQ_API_KEY from the environment
+    return _client
+
+
+# ---------------------------------------------------------------------------
+# The question-answering loop
 # ---------------------------------------------------------------------------
 
 
-class Agent:
-    def __init__(
-        self,
-        store: VectorStore,
-        reranker: Reranker,
-        embedder: Embedder | None = None,
-        client: Groq | None = None,
-        model: str = config.GROQ_MODEL_NAME,
-    ):
-        self.store = store
-        self.reranker = reranker
-        self.embedder = embedder or store.embedder
-        self.client = client or Groq()
-        self.model = model
+def ask(question: str, history: list[dict] | None = None) -> dict:
+    """Answers one question.
 
-    def ask(self, user_query: str, history: list[dict] | None = None) -> dict:
-        """Runs the tool-calling loop for one user turn.
+    `history` is the list of earlier {"role", "content"} messages in this conversation. This
+    question and its answer are appended to it.
 
-        `history` is a plain list of {"role","content"} dicts from prior turns (mutated
-        in-place with this turn's user/assistant messages, and also returned for convenience).
-        Returns {"answer": str, "sources": list[dict], "history": list[dict]}.
-        """
-        history = history if history is not None else []
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        messages.extend(history)
-        messages.append({"role": "user", "content": user_query})
+    Returns {"answer": str, "sources": list of chunk dicts, "history": the updated history}.
+    """
+    if history is None:
+        history = []
 
-        last_sources: list[dict] = []
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages.extend(history)
+    messages.append({"role": "user", "content": question})
 
-        for _ in range(config.MAX_TOOL_ITERATIONS):
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=TOOLS,
-                temperature=0.1,
-            )
-            message = response.choices[0].message
+    sources = []          # chunks from the latest retrieve_context call, shown in the UI
+    retrieved_texts = []  # everything retrieve_context returned, used by the fallback
 
-            if not message.tool_calls:
-                answer = message.content or ""
-                history.append({"role": "user", "content": user_query})
-                history.append({"role": "assistant", "content": answer})
-                return {"answer": answer, "sources": last_sources, "history": history}
+    for _ in range(config.MAX_TOOL_ITERATIONS):
+        response = get_client().chat.completions.create(
+            model=config.GROQ_MODEL_NAME,
+            messages=messages,
+            tools=TOOLS,
+            temperature=0.1,
+        )
+        message = response.choices[0].message
+
+        # No tool calls -> the model has written its final answer.
+        if not message.tool_calls:
+            answer = message.content or ""
+            return _finish(question, answer, sources, history)
+
+        # The model wants to call one or more tools. Record its request, run each tool,
+        # and add the results to the conversation so the model can read them next round.
+        messages.append(_assistant_message_with_tool_calls(message))
+
+        for tool_call in message.tool_calls:
+            name = tool_call.function.name
+            try:
+                args = json.loads(tool_call.function.arguments or "{}")
+            except json.JSONDecodeError:
+                args = {}
+
+            text, tool_sources = run_tool(name, args)
+
+            if name == "retrieve_context":
+                retrieved_texts.append(text)
+                if tool_sources:
+                    sources = tool_sources
 
             messages.append({
-                "role": "assistant",
-                "content": message.content,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": tc.type,
-                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                    }
-                    for tc in message.tool_calls
-                ],
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "name": name,
+                "content": text,
             })
 
-            for tool_call in message.tool_calls:
-                name = tool_call.function.name
-                try:
-                    args = json.loads(tool_call.function.arguments or "{}")
-                except json.JSONDecodeError:
-                    args = {}
+    # Still calling tools after MAX_TOOL_ITERATIONS rounds: force an answer.
+    answer = _answer_without_tools(question, history, retrieved_texts)
+    return _finish(question, answer, sources, history)
 
-                handler = TOOL_DISPATCH.get(name)
-                if handler is None:
-                    content, sources = f"Unknown tool: {name}", []
-                else:
-                    content, sources = handler(args, self)
 
-                if name == "retrieve_context" and sources:
-                    last_sources = sources
+def _assistant_message_with_tool_calls(message) -> dict:
+    """Converts Groq's tool-call reply into a plain dict we can send back next round."""
+    return {
+        "role": "assistant",
+        "content": message.content,
+        "tool_calls": [
+            {
+                "id": tc.id,
+                "type": tc.type,
+                "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+            }
+            for tc in message.tool_calls
+        ],
+    }
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "name": name,
-                    "content": content,
-                })
 
-        # Iteration cap hit: answer from the context already retrieved, with no tools.
-        # The request is rebuilt without the tool-call messages: some models (e.g. gpt-oss)
-        # try to call a tool again when they see them, and Groq rejects that with a 400.
-        retrieved = [
-            m["content"] for m in messages
-            if m["role"] == "tool" and m["name"] == "retrieve_context"
-        ]
-        fallback_messages = [{"role": "system", "content": FALLBACK_SYSTEM_PROMPT}]
-        fallback_messages.extend(history)
-        fallback_messages.append({
-            "role": "user",
-            "content": FALLBACK_USER_TEMPLATE.format(
-                context="\n\n".join(retrieved) or NO_RESULTS_MESSAGE, question=user_query
-            ),
-        })
-        fallback = self.client.chat.completions.create(
-            model=self.model, messages=fallback_messages, temperature=0.1
-        )
-        answer = fallback.choices[0].message.content or ""
-        history.append({"role": "user", "content": user_query})
-        history.append({"role": "assistant", "content": answer})
-        return {"answer": answer, "sources": last_sources, "history": history}
+def _answer_without_tools(question: str, history: list[dict], retrieved_texts: list[str]) -> str:
+    """Asks the model to answer using only the text retrieved so far.
+
+    This request is built from scratch, without any of the tool-call messages: some models
+    (e.g. gpt-oss) try to call a tool again when they see them, and Groq rejects that with a 400.
+    """
+    context = "\n\n".join(retrieved_texts) or NO_RESULTS_MESSAGE
+    messages = [{"role": "system", "content": FALLBACK_SYSTEM_PROMPT}]
+    messages.extend(history)
+    messages.append({
+        "role": "user",
+        "content": FALLBACK_USER_TEMPLATE.format(context=context, question=question),
+    })
+    response = get_client().chat.completions.create(
+        model=config.GROQ_MODEL_NAME, messages=messages, temperature=0.1
+    )
+    return response.choices[0].message.content or ""
+
+
+def _finish(question: str, answer: str, sources: list[dict], history: list[dict]) -> dict:
+    """Saves this turn to the history (only the plain question and answer, no tool messages)."""
+    history.append({"role": "user", "content": question})
+    history.append({"role": "assistant", "content": answer})
+    return {"answer": answer, "sources": sources, "history": history}

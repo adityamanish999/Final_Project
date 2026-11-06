@@ -3,7 +3,7 @@
 ## 1. Chunk-size comparison
 
 **Method.** `evaluation/evaluate_chunking.py` builds an isolated, in-memory FAISS index for each
-of three `ChunkConfig`s over the three sample Berkshire Hathaway PDFs (2023 annual report, 2023
+of three (chunk_size, overlap) configs over the three sample Berkshire Hathaway PDFs (2023 annual report, 2023
 and 2022 shareholder letters), then runs the fixed 10-question set (`EVAL_QUERIES` in the same file)
 against each index (FAISS top-20 → cross-encoder rerank → top-5). Since no labeled ground-truth
 QA dataset exists for these documents, `keyword_hit_rate` is a lightweight proxy — whether any
@@ -84,6 +84,6 @@ worth noting as a possible latency/cost optimization.
   at a page break. Chosen deliberately to keep page-level citations exact.
 - The keyword-hit-rate metric is a cheap proxy, not a validated relevance judgment; treat the
   FAISS/rerank scores as the primary signal in this report.
-- `VectorStore` supports only a full `clear()`, not per-document deletion (removing a single
+- The vector store supports only a full `clear_store()`, not per-document deletion (removing a single
   document from a `faiss.IndexFlatIP` isn't efficient without switching to `IndexIDMap`) — noted
   as a possible future enhancement in `core/vector_store.py`.

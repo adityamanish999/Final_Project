@@ -1,6 +1,6 @@
 """Compares retrieval quality across multiple chunk_size/overlap configurations.
 
-Builds an isolated, in-memory FAISS index per ChunkConfig over the given PDFs (the persistent
+Builds an isolated, in-memory FAISS index per (chunk_size, overlap) config over the given PDFs (the persistent
 app vector store in data/vector_store/ is left untouched), runs the fixed query set
 EVAL_QUERIES below, and returns a tidy DataFrame — one row per (config, query) — plus a
 config-level summary. This is real, reusable module code: notebooks/demo.ipynb only calls into
@@ -13,9 +13,8 @@ from statistics import mean
 import faiss
 import pandas as pd
 
-from core.documents import ChunkConfig, chunk_document, load_document
-from core.retrieval import Reranker
-from core.vector_store import Embedder
+from core import retrieval, vector_store
+from core.documents import chunk_document, load_document
 
 # Fixed evaluation query set, tailored to the sample Berkshire Hathaway annual report /
 # shareholder letter documents downloaded by `python scripts/cli.py download`.
@@ -65,27 +64,20 @@ EVAL_QUERIES = [
     },
 ]
 
-DEFAULT_CONFIGS = [
-    ChunkConfig(chunk_size=400, overlap=50),
-    ChunkConfig(chunk_size=800, overlap=150),
-    ChunkConfig(chunk_size=1200, overlap=200),
-]
+# (chunk_size, overlap) pairs to compare
+DEFAULT_CONFIGS = [(400, 50), (800, 150), (1200, 200)]
 
 
-def _config_label(chunk_config: ChunkConfig) -> str:
-    return f"{chunk_config.chunk_size}/{chunk_config.overlap}"
-
-
-def build_in_memory_index(pdf_paths: list[str], chunk_config: ChunkConfig, embedder: Embedder):
+def build_in_memory_index(pdf_paths: list[str], chunk_size: int, overlap: int):
     """Chunks + embeds `pdf_paths` under one config into a standalone FAISS index (not persisted)."""
     all_chunks = []
     for pdf_path in pdf_paths:
         pages, _ = load_document(pdf_path)
-        all_chunks.extend(chunk_document(pages, chunk_config))
+        all_chunks.extend(chunk_document(pages, chunk_size, overlap))
 
     texts = [c["text"] for c in all_chunks]
-    vectors = embedder.encode_normalized(texts)
-    index = faiss.IndexFlatIP(embedder.dimension)
+    vectors = vector_store.embed(texts)
+    index = faiss.IndexFlatIP(vector_store.embedding_dimension())
     if len(vectors):
         index.add(vectors)
     return index, all_chunks
@@ -102,38 +94,35 @@ def _search(index, chunks: list[dict], query_vector, top_k: int) -> list[dict]:
 
 def run_comparison(
     pdf_paths: list[str],
-    configs: list[ChunkConfig] | None = None,
+    configs: list[tuple[int, int]] | None = None,
     queries: list[dict] | None = None,
-    embedder: Embedder | None = None,
-    reranker: Reranker | None = None,
     fetch_k: int = 20,
     top_k: int = 5,
 ) -> pd.DataFrame:
     """Runs the chunk-size comparison experiment. Returns one row per (config, query)."""
     configs = configs or DEFAULT_CONFIGS
     queries = queries if queries is not None else EVAL_QUERIES
-    embedder = embedder or Embedder()
-    reranker = reranker or Reranker()
+    dimension = vector_store.embedding_dimension()
 
     rows = []
-    for chunk_config in configs:
-        label = _config_label(chunk_config)
+    for chunk_size, overlap in configs:
+        label = f"{chunk_size}/{overlap}"
 
         start = time.time()
-        index, chunks = build_in_memory_index(pdf_paths, chunk_config, embedder)
+        index, chunks = build_in_memory_index(pdf_paths, chunk_size, overlap)
         build_seconds = time.time() - start
 
         avg_chunk_len = mean(len(c["text"]) for c in chunks) if chunks else 0
         num_chunks = len(chunks)
-        index_bytes_est = index.ntotal * embedder.dimension * 4  # float32
+        index_bytes_est = index.ntotal * dimension * 4  # float32
 
         for item in queries:
             query = item["query"]
             expected_keywords = item.get("expected_keywords", [])
 
-            query_vector = embedder.encode_normalized([query])[0]
+            query_vector = vector_store.embed([query])[0]
             candidates = _search(index, chunks, query_vector, fetch_k)
-            ranked = reranker.rerank(query, candidates, top_k) if candidates else []
+            ranked = retrieval.rerank(query, candidates, top_k)
 
             mean_faiss_score = mean(c["score"] for c in candidates[:top_k]) if candidates else 0.0
             top1_faiss_score = candidates[0]["score"] if candidates else 0.0
@@ -145,8 +134,8 @@ def run_comparison(
 
             rows.append({
                 "config": label,
-                "chunk_size": chunk_config.chunk_size,
-                "overlap": chunk_config.overlap,
+                "chunk_size": chunk_size,
+                "overlap": overlap,
                 "num_chunks": num_chunks,
                 "avg_chunk_len": round(avg_chunk_len, 1),
                 "build_seconds": round(build_seconds, 3),

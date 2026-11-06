@@ -1,16 +1,16 @@
-"""Phases 1-2: PDF text extraction, cleaning, and chunking.
+"""Steps 1-2: read a PDF, clean its text, and cut it into chunks.
 
-Phase 1 (ingestion): pypdf extracts per-page text, repeated headers/footers and page-number-only
-lines are removed, whitespace is normalized, and a sha256 file hash is computed for dedup.
+Step 1 (reading): pypdf gives us the text of each page. We remove lines that repeat on most
+pages (running headers/footers) and lines that are only a page number, then squash extra
+whitespace. We also compute a hash of the file so we can tell if it was already ingested.
 
-Phase 2 (chunking): fixed-size character windows with overlap, applied per page so chunks never
-cross page boundaries and every chunk keeps an exact page number for citations.
+Step 2 (chunking): each page's text is cut into fixed-size pieces that overlap a little.
+Chunks never cross a page boundary, so every chunk knows its exact page number for citations.
 """
 
 import hashlib
 import re
 from collections import Counter
-from dataclasses import dataclass
 from pathlib import Path
 
 from pypdf import PdfReader
@@ -18,24 +18,17 @@ from pypdf import PdfReader
 from core import config
 
 # ---------------------------------------------------------------------------
-# Phase 1: ingestion
+# Step 1: read and clean a PDF
 # ---------------------------------------------------------------------------
 
-_PAGE_NUMBER_LINE = re.compile(r"^\d{1,4}$")
-_WHITESPACE = re.compile(r"\s+")
+
+def file_hash(pdf_path) -> str:
+    """A fingerprint of the file's contents. Same file -> same hash, even if renamed."""
+    return hashlib.sha256(Path(pdf_path).read_bytes()).hexdigest()
 
 
-def file_hash(pdf_path: str | Path) -> str:
-    """sha256 of file contents, used to detect already-ingested documents."""
-    digest = hashlib.sha256()
-    with open(pdf_path, "rb") as f:
-        for block in iter(lambda: f.read(65536), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def extract_pages(pdf_path: str | Path) -> list[dict]:
-    """Raw per-page text via pypdf. Returns [{"page": int, "text": str}]."""
+def extract_pages(pdf_path) -> list[dict]:
+    """Raw text of every page, as [{"page": 1, "text": "..."}, ...]."""
     reader = PdfReader(str(pdf_path))
     pages = []
     for page_num, page in enumerate(reader.pages, start=1):
@@ -44,90 +37,90 @@ def extract_pages(pdf_path: str | Path) -> list[dict]:
     return pages
 
 
-def _strip_repeated_boilerplate(pages: list[dict]) -> list[dict]:
-    """Drops lines that repeat identically across most pages (running headers/footers)."""
+def remove_repeated_lines(pages: list[dict]) -> list[dict]:
+    """Removes running headers/footers.
+
+    A line that appears on at least half of the pages (and on at least 3 pages) is almost
+    certainly a header or footer like "Berkshire Hathaway Inc." rather than real content.
+    """
     if len(pages) < 3:
         return pages
 
+    # Count on how many pages each line appears (set() so a line counts once per page).
     line_counts = Counter()
-    per_page_lines = []
     for page in pages:
-        lines = [line.strip() for line in page["text"].splitlines() if line.strip()]
-        per_page_lines.append(lines)
-        line_counts.update(set(lines))
+        lines = {line.strip() for line in page["text"].splitlines() if line.strip()}
+        line_counts.update(lines)
 
-    threshold = max(3, int(len(pages) * 0.5))
-    boilerplate = {line for line, count in line_counts.items() if count >= threshold}
+    min_pages = max(3, len(pages) // 2)
+    repeated = {line for line, count in line_counts.items() if count >= min_pages}
 
     cleaned = []
-    for page, lines in zip(pages, per_page_lines):
-        kept = [line for line in lines if line not in boilerplate]
+    for page in pages:
+        kept = [
+            line.strip() for line in page["text"].splitlines()
+            if line.strip() and line.strip() not in repeated
+        ]
         cleaned.append({"page": page["page"], "text": "\n".join(kept)})
     return cleaned
 
 
 def clean_text(text: str) -> str:
-    """Whitespace normalization plus dropping page-number-only lines."""
-    lines = [line for line in text.splitlines() if not _PAGE_NUMBER_LINE.match(line.strip())]
-    joined = "\n".join(lines)
-    return _WHITESPACE.sub(" ", joined).strip()
+    """Drops lines that are only a page number, then collapses all whitespace to single spaces."""
+    lines = [line for line in text.splitlines() if not re.fullmatch(r"\d{1,4}", line.strip())]
+    return re.sub(r"\s+", " ", "\n".join(lines)).strip()
 
 
-def load_document(pdf_path: str | Path) -> tuple[list[dict], str]:
-    """Extracts, de-boilerplates, and cleans a PDF's pages.
+def load_document(pdf_path) -> tuple[list[dict], str]:
+    """Reads and cleans a PDF.
 
-    Returns (pages, hash) where pages is [{"page", "text", "source"}] with cleaned text.
+    Returns (pages, hash) where pages is [{"page": 1, "text": "...", "source": "file.pdf"}, ...].
     """
     source = Path(pdf_path).name
-    raw_pages = extract_pages(pdf_path)
-    deboilerplated = _strip_repeated_boilerplate(raw_pages)
+    pages = remove_repeated_lines(extract_pages(pdf_path))
     pages = [
         {"page": p["page"], "text": clean_text(p["text"]), "source": source}
-        for p in deboilerplated
+        for p in pages
     ]
     return pages, file_hash(pdf_path)
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: chunking
+# Step 2: chunking
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class ChunkConfig:
-    chunk_size: int = config.DEFAULT_CHUNK_SIZE
-    overlap: int = config.DEFAULT_CHUNK_OVERLAP
-    strategy: str = "fixed"
+def chunk_text(
+    text: str,
+    page: int,
+    source: str,
+    chunk_size: int = config.DEFAULT_CHUNK_SIZE,
+    overlap: int = config.DEFAULT_CHUNK_OVERLAP,
+) -> list[dict]:
+    """Cuts one page of text into pieces of `chunk_size` characters.
 
-
-def chunk_text(text: str, page: int, source: str, chunk_config: ChunkConfig) -> list[dict]:
-    """Fixed-size character windowing with overlap. Chunks never cross page boundaries."""
-    if chunk_config.strategy != "fixed":
-        raise ValueError(f"Unsupported chunking strategy: {chunk_config.strategy}")
-
+    Each new chunk starts `chunk_size - overlap` characters after the previous one, so
+    neighbouring chunks share `overlap` characters and a sentence cut in half still appears
+    whole in one of them.
+    """
     chunks = []
-    start = 0
-    step = chunk_config.chunk_size - chunk_config.overlap
-    while start < len(text):
-        piece = text[start:start + chunk_config.chunk_size]
-        if piece:
-            chunks.append({
-                "text": piece,
-                "page": page,
-                "source": source,
-                "chunk_size": chunk_config.chunk_size,
-                "overlap": chunk_config.overlap,
-            })
-        start += step
+    step = chunk_size - overlap
+    for start in range(0, len(text), step):
+        chunks.append({
+            "text": text[start:start + chunk_size],
+            "page": page,
+            "source": source,
+        })
     return chunks
 
 
-def chunk_document(pages: list[dict], chunk_config: ChunkConfig | None = None) -> list[dict]:
-    """Applies chunk_text per page and concatenates. `pages` is [{"page","text","source"}]."""
-    chunk_config = chunk_config or ChunkConfig()
+def chunk_document(
+    pages: list[dict],
+    chunk_size: int = config.DEFAULT_CHUNK_SIZE,
+    overlap: int = config.DEFAULT_CHUNK_OVERLAP,
+) -> list[dict]:
+    """Chunks every page separately and returns all the chunks in one list."""
     chunks = []
     for page in pages:
-        chunks.extend(
-            chunk_text(page["text"], page["page"], page["source"], chunk_config)
-        )
+        chunks.extend(chunk_text(page["text"], page["page"], page["source"], chunk_size, overlap))
     return chunks
